@@ -1,7 +1,7 @@
-import { SalesSession, DariEntry } from '../types/poultry';
+import { SalesSession } from '../types/poultry';
 
-const STORAGE_KEY = 'poultry_dari_sessions_v1';
-const SETTINGS_KEY = 'poultry_dari_settings_v1';
+const STORAGE_KEY = 'poultry_dari_sessions_v2';
+const SETTINGS_KEY = 'poultry_dari_settings_v2';
 
 export interface AppSettings {
   defaultTareKg: number;
@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
 };
 
-// Create a initial demo session so user sees immediate live data
+// Create a clean new session without fake demo entries
 export function createNewSession(title?: string): SalesSession {
   const today = new Date();
   const dateStr = today.toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -35,57 +35,8 @@ export function createNewSession(title?: string): SalesSession {
     date: dateStr,
     defaultTareKg: 2.0,
     defaultRatePerKg: 170,
-    entries: [
-      {
-        id: 'entry_1',
-        dariNo: 1,
-        buyerName: 'নাইম',
-        grossKg: 35,
-        grossGrams: 200,
-        totalGrossKg: 35.2,
-        tareKg: 2.0,
-        netKg: 33.2,
-        birdCount: 15,
-        ratePerKg: 170,
-        totalPrice: 5644,
-        timestamp: Date.now() - 3600000,
-        isVoiceEntry: true,
-      },
-      {
-        id: 'entry_2',
-        dariNo: 2,
-        buyerName: 'নাইম',
-        grossKg: 42,
-        grossGrams: 500,
-        totalGrossKg: 42.5,
-        tareKg: 2.0,
-        netKg: 40.5,
-        birdCount: 18,
-        ratePerKg: 170,
-        totalPrice: 6885,
-        timestamp: Date.now() - 1800000,
-        isVoiceEntry: true,
-      },
-      {
-        id: 'entry_3',
-        dariNo: 3,
-        buyerName: 'রফিক',
-        grossKg: 38,
-        grossGrams: 100,
-        totalGrossKg: 38.1,
-        tareKg: 2.0,
-        netKg: 36.1,
-        birdCount: 16,
-        ratePerKg: 170,
-        totalPrice: 6137,
-        timestamp: Date.now() - 600000,
-        isVoiceEntry: true,
-      }
-    ],
-    payments: {
-      'নাইম': 10000,
-      'রফিক': 5000,
-    },
+    entries: [],
+    payments: {},
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

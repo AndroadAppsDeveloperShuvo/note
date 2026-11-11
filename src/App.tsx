@@ -9,6 +9,9 @@ import { CashMemoModal } from './components/CashMemoModal';
 import { SettingsModal } from './components/SettingsModal';
 import { AiAdvisorModal } from './components/AiAdvisorModal';
 import { SessionHistoryModal } from './components/SessionHistoryModal';
+import { AddBuyerModal } from './components/AddBuyerModal';
+import { EditTareModal } from './components/EditTareModal';
+import { EditRateModal } from './components/EditRateModal';
 
 import { DariEntry, BuyerSummary, SalesSession } from './types/poultry';
 import {
@@ -26,8 +29,7 @@ import {
   deleteEntryFromFirestore,
   deleteSessionFromFirestore,
 } from './firebase';
-import { audioManager } from './utils/audioHelper';
-import { Calendar, Plus, FileSpreadsheet, Sparkles, Scale, Smartphone, CloudCheck } from 'lucide-react';
+import { Calendar, FileSpreadsheet, CloudCheck } from 'lucide-react';
 
 export default function App() {
   const [sessions, setSessions] = useState<SalesSession[]>(() => loadSessions());
@@ -37,7 +39,6 @@ export default function App() {
   });
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [activeBuyer, setActiveBuyer] = useState<string>('নাইম');
-  const [isCloudConnected, setIsCloudConnected] = useState<boolean>(true);
 
   // Modals visibility state
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -48,6 +49,11 @@ export default function App() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isIPhoneFrame, setIsIPhoneFrame] = useState(false);
+
+  // Custom interactive modals replacing window.prompt
+  const [isAddBuyerModalOpen, setIsAddBuyerModalOpen] = useState(false);
+  const [isEditTareModalOpen, setIsEditTareModalOpen] = useState(false);
+  const [isEditRateModalOpen, setIsEditRateModalOpen] = useState(false);
 
   // Undo memory
   const [lastAddedEntry, setLastAddedEntry] = useState<DariEntry | null>(null);
@@ -60,7 +66,6 @@ export default function App() {
     const unsubscribe = subscribeSessions((cloudSessions) => {
       if (cloudSessions && cloudSessions.length > 0) {
         setSessions(cloudSessions);
-        setIsCloudConnected(true);
       }
     });
 
@@ -264,39 +269,23 @@ export default function App() {
   // Active filter state for Dari Table
   const [activeFilterBuyer, setActiveFilterBuyer] = useState<string>('ALL');
 
-  // Add new buyer dialog prompt
-  const handlePromptAddNewBuyer = () => {
-    const name = window.prompt('নতুন খদ্দেরের নাম লিখুন (যেমন: শাহীন, লিটন, সালাম):');
-    if (name && name.trim()) {
-      const trimmed = name.trim();
-      setActiveBuyer(trimmed);
-    }
+  // Handle saving new buyer name
+  const handleAddNewBuyerName = (name: string) => {
+    setActiveBuyer(name);
   };
 
-  // Edit preset tare weight
-  const handleEditTareWeight = () => {
-    const val = window.prompt('ডিফল্ট খাঁচার ওজন বাদ (কেজি):', activeSession.defaultTareKg.toString());
-    if (val !== null) {
-      const num = parseFloat(val);
-      if (!isNaN(num) && num >= 0) {
-        const updated = { ...activeSession, defaultTareKg: num };
-        setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
-        saveSessionToFirestore(updated);
-      }
-    }
+  // Handle saving tare weight
+  const handleSaveTareWeight = (tareKg: number) => {
+    const updated = { ...activeSession, defaultTareKg: tareKg };
+    setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
+    saveSessionToFirestore(updated);
   };
 
-  // Edit preset rate per kg
-  const handleEditRatePerKg = () => {
-    const val = window.prompt('ডিফল্ট প্রতি কেজি বিক্রি দর (৳):', activeSession.defaultRatePerKg.toString());
-    if (val !== null) {
-      const num = parseInt(val, 10);
-      if (!isNaN(num) && num >= 0) {
-        const updated = { ...activeSession, defaultRatePerKg: num };
-        setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
-        saveSessionToFirestore(updated);
-      }
-    }
+  // Handle saving rate per kg
+  const handleSaveRatePerKg = (ratePerKg: number) => {
+    const updated = { ...activeSession, defaultRatePerKg: ratePerKg };
+    setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
+    saveSessionToFirestore(updated);
   };
 
   // Export CSV Report
@@ -332,7 +321,7 @@ export default function App() {
       <div className="bg-slate-900 border-b border-slate-800 px-4 py-1.5 flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5 text-emerald-400 font-semibold text-[11px]">
           <CloudCheck className="w-3.5 h-3.5" />
-          <span>ফায়ারবেস ক্লাউড সেভ সক্রিয় (Project: drivebot-d2a27)</span>
+          <span>ফায়ারবেস ক্লাউড সেভ সক্রিয় (drivebot-d2a27)</span>
         </div>
 
         <button
@@ -349,11 +338,11 @@ export default function App() {
         activeBuyer={activeBuyer}
         onChangeBuyer={setActiveBuyer}
         buyerList={buyerList}
-        onAddNewBuyer={handlePromptAddNewBuyer}
+        onAddNewBuyer={() => setIsAddBuyerModalOpen(true)}
         tareKg={activeSession.defaultTareKg}
-        onEditTare={handleEditTareWeight}
+        onEditTare={() => setIsEditTareModalOpen(true)}
         ratePerKg={activeSession.defaultRatePerKg}
-        onEditRate={handleEditRatePerKg}
+        onEditRate={() => setIsEditRateModalOpen(true)}
         totalGrossKg={totalBatchMetrics.totalGrossKg}
         totalNetKg={totalBatchMetrics.totalNetKg}
         totalAmount={totalBatchMetrics.totalAmount}
@@ -414,8 +403,28 @@ export default function App() {
         defaultTareKg={activeSession.defaultTareKg}
         defaultRatePerKg={activeSession.defaultRatePerKg}
         onSaveEntry={handleSaveDariEntry}
-        onAddNewBuyer={handlePromptAddNewBuyer}
+        onAddNewBuyer={() => setIsAddBuyerModalOpen(true)}
         editingEntry={editingEntry}
+      />
+
+      <AddBuyerModal
+        isOpen={isAddBuyerModalOpen}
+        onClose={() => setIsAddBuyerModalOpen(false)}
+        onAddBuyer={handleAddNewBuyerName}
+      />
+
+      <EditTareModal
+        isOpen={isEditTareModalOpen}
+        onClose={() => setIsEditTareModalOpen(false)}
+        currentTareKg={activeSession.defaultTareKg}
+        onSaveTare={handleSaveTareWeight}
+      />
+
+      <EditRateModal
+        isOpen={isEditRateModalOpen}
+        onClose={() => setIsEditRateModalOpen(false)}
+        currentRate={activeSession.defaultRatePerKg}
+        onSaveRate={handleSaveRatePerKg}
       />
 
       <CashMemoModal
