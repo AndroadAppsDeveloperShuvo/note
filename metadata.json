@@ -1,0 +1,8 @@
+{
+  "name": "পোল্ট্রি খামার ভয়েস স্কেল",
+  "description": "পোল্ট্রি খামারে মুরগি বিক্রির সময় মুখ দিয়ে বললে স্বয়ংক্রিয়ভাবে কেজি, গ্রাম, দারি নম্বর ও মোট হিসাব সংরক্ষণকারী আইফোন অপটিমাইজড অ্যাপ।",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

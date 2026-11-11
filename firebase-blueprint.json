@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "SalesSession": {
+      "title": "Poultry Batch Sales Session",
+      "description": "Represents a single sales session or lot for poultry weighing.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Session unique identifier"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the sales session e.g. Today Sales 10 Nov"
+        },
+        "date": {
+          "type": "string",
+          "description": "Formatted date of session"
+        },
+        "defaultTareKg": {
+          "type": "number",
+          "description": "Default cage tare weight in Kg"
+        },
+        "defaultRatePerKg": {
+          "type": "number",
+          "description": "Default rate per Kg in BDT"
+        },
+        "payments": {
+          "type": "object",
+          "description": "Map of buyer names to paid amounts"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp of creation"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp of last update"
+        }
+      },
+      "required": ["id", "title", "defaultTareKg", "defaultRatePerKg"]
+    },
+    "DariEntry": {
+      "title": "Crate Weight Dari Entry",
+      "description": "Individual crate weighing record (Dari).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Entry unique identifier"
+        },
+        "dariNo": {
+          "type": "number",
+          "description": "Sequential Dari number"
+        },
+        "buyerName": {
+          "type": "string",
+          "description": "Name of buyer"
+        },
+        "grossKg": {
+          "type": "number",
+          "description": "Gross weight Kg integer portion"
+        },
+        "grossGrams": {
+          "type": "number",
+          "description": "Grams portion 0-999"
+        },
+        "totalGrossKg": {
+          "type": "number",
+          "description": "Total gross weight decimal"
+        },
+        "tareKg": {
+          "type": "number",
+          "description": "Crate tare weight deducted"
+        },
+        "netKg": {
+          "type": "number",
+          "description": "Net chicken weight"
+        },
+        "birdCount": {
+          "type": "number",
+          "description": "Number of birds in crate"
+        },
+        "ratePerKg": {
+          "type": "number",
+          "description": "Selling rate per Kg"
+        },
+        "totalPrice": {
+          "type": "number",
+          "description": "Total price in BDT"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Entry creation timestamp"
+        },
+        "isVoiceEntry": {
+          "type": "boolean",
+          "description": "Whether recorded via voice"
+        }
+      },
+      "required": ["id", "dariNo", "buyerName", "totalGrossKg", "netKg", "totalPrice"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": "SalesSession",
+      "description": "Collection of poultry sales sessions"
+    },
+    "/sessions/{sessionId}/entries/{entryId}": {
+      "schema": "DariEntry",
+      "description": "Sub-collection of Dari weight entries within a sales session"
+    }
+  }
+}
