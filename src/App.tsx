@@ -25,7 +25,8 @@ import {
 import {
   testFirebaseConnection,
   subscribeSessions,
-  saveSessionToFirestore,
+  saveSingleEntryToFirestore,
+  saveSessionMetaToFirestore,
   deleteEntryFromFirestore,
   deleteSessionFromFirestore,
 } from './firebase';
@@ -62,7 +63,6 @@ export default function App() {
   useEffect(() => {
     testFirebaseConnection();
 
-    // Subscribe to Firestore real-time updates
     const unsubscribe = subscribeSessions((cloudSessions) => {
       if (cloudSessions && cloudSessions.length > 0) {
         setSessions(cloudSessions);
@@ -82,19 +82,15 @@ export default function App() {
     saveSettings(settings);
   }, [settings]);
 
-  // Derive unique buyers list
+  // Derive unique buyers list merging persistent customBuyers + session entries
   const buyerList = useMemo(() => {
     const set = new Set<string>();
-    set.add('নাইম');
-    set.add('রফিক');
-    set.add('সুমন');
-    set.add('আলম');
-    set.add('লিটন');
+    (settings.customBuyers || ['নাইম', 'রফিক', 'সুমন', 'আলম', 'লিটন']).forEach((b) => set.add(b));
 
     activeSession.entries.forEach((e) => set.add(e.buyerName));
     Object.keys(activeSession.payments || {}).forEach((b) => set.add(b));
     return Array.from(set);
-  }, [activeSession]);
+  }, [activeSession, settings.customBuyers]);
 
   // Set active buyer if not in list
   useEffect(() => {
@@ -103,7 +99,7 @@ export default function App() {
     }
   }, [buyerList]);
 
-  // Add or Update Dari Entry (Local + Firestore Sync)
+  // Add or Update Dari Entry (Instant local update + non-blocking Firestore sync)
   const handleSaveDariEntry = (entryPartial: Partial<DariEntry>) => {
     const currentEntries = [...activeSession.entries];
     let updatedEntries: DariEntry[];
@@ -148,12 +144,16 @@ export default function App() {
       updatedAt: Date.now(),
     };
 
+    // Instant local UI state update!
     setSessions((prev) =>
       prev.map((s) => (s.id === activeSession.id ? updatedSession : s))
     );
 
-    // Save to Firestore Database
-    saveSessionToFirestore(updatedSession);
+    // Save single entry to Firestore in background without blocking
+    if (savedItem!) {
+      saveSingleEntryToFirestore(activeSession.id, savedItem);
+      saveSessionMetaToFirestore(updatedSession);
+    }
   };
 
   // Undo Last Added Entry
@@ -208,7 +208,7 @@ export default function App() {
       prev.map((s) => (s.id === activeSession.id ? updatedSession : s))
     );
 
-    saveSessionToFirestore(updatedSession);
+    saveSessionMetaToFirestore(updatedSession);
   };
 
   // Compute Buyer Summaries
@@ -269,8 +269,10 @@ export default function App() {
   // Active filter state for Dari Table
   const [activeFilterBuyer, setActiveFilterBuyer] = useState<string>('ALL');
 
-  // Handle saving new buyer name
+  // Handle saving new buyer name persistently
   const handleAddNewBuyerName = (name: string) => {
+    const updatedCustom = Array.from(new Set([...(settings.customBuyers || []), name]));
+    setSettings((prev) => ({ ...prev, customBuyers: updatedCustom }));
     setActiveBuyer(name);
   };
 
@@ -278,14 +280,14 @@ export default function App() {
   const handleSaveTareWeight = (tareKg: number) => {
     const updated = { ...activeSession, defaultTareKg: tareKg };
     setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
-    saveSessionToFirestore(updated);
+    saveSessionMetaToFirestore(updated);
   };
 
   // Handle saving rate per kg
   const handleSaveRatePerKg = (ratePerKg: number) => {
     const updated = { ...activeSession, defaultRatePerKg: ratePerKg };
     setSessions((prev) => prev.map((s) => (s.id === activeSession.id ? updated : s)));
-    saveSessionToFirestore(updated);
+    saveSessionMetaToFirestore(updated);
   };
 
   // Export CSV Report
@@ -459,7 +461,7 @@ export default function App() {
           const newSess = createNewSession(title);
           setSessions((prev) => [newSess, ...prev]);
           setActiveSessionId(newSess.id);
-          saveSessionToFirestore(newSess);
+          saveSessionMetaToFirestore(newSess);
         }}
         onDeleteSession={(id) => {
           setSessions((prev) => prev.filter((s) => s.id !== id));

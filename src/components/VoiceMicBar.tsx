@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, RefreshCw, Sparkles, CheckCircle2, RotateCcw, Volume2, Send } from 'lucide-react';
+import { Mic, MicOff, RefreshCw, CheckCircle2, RotateCcw, Send } from 'lucide-react';
 import { parseBengaliVoiceClientSide } from '../utils/bengaliParser';
 import { VoiceParseResult, DariEntry } from '../types/poultry';
 import { audioManager } from '../utils/audioHelper';
@@ -28,9 +28,8 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
 }) => {
   const [isListening, setIsListening] = useState(false);
   const [transcriptInput, setTranscriptInput] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [parsePreview, setParsePreview] = useState<VoiceParseResult | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string>('মাইক অন করে মুখে বলুন অথবা নিচে লিখুন');
+  const [statusMessage, setStatusMessage] = useState<string>('মাইক চাপুন অথবা নিচে লিখে সেভ করুন');
   const [speechError, setSpeechError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
@@ -42,19 +41,19 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setSpeechError('ব্রাউজারে সরাসরি ভয়েস স্পিচ সমর্থিত নয়। আপনি নিচে লিখে বা বাটনে চাপ দিয়ে এন্ট্রি করতে পারবেন।');
+      setSpeechError('আপনার ব্রাউজারে স্পিচ ফিচার নাই। নিচে সরাসরি টাইপ করে খুব সহজে সেভ করতে পারবেন।');
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false; // Single shot is much more reliable across mobile & desktop
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = 'bn-BD';
 
       recognition.onstart = () => {
         setIsListening(true);
-        setStatusMessage('🎙️ শুনছি... মুখে স্পষ্ট করে বলুন (যেমন: নাইম ৩৫ কেজি ২০০ গ্রাম)');
+        setStatusMessage('🎙️ শুনছি... মুখে বলুন (যেমন: নাইম ৩৫ কেজি ২০০ গ্রাম)');
         setSpeechError(null);
       };
 
@@ -75,11 +74,11 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
         console.warn('Speech recognition error:', event.error);
         setIsListening(false);
         if (event.error === 'not-allowed') {
-          setSpeechError('মাইক্রোফোন ব্যবহারের অনুমতি প্রয়োজন। ব্রাউজার সেটিংসে মাইক Allow করুন।');
+          setSpeechError('মাইক্রোফোন পারমিশন প্রয়োজন। ব্রাউজার সেটিংসে মাইক Allow করুন।');
         } else if (event.error === 'no-speech') {
           setStatusMessage('কোনো কথা শোনা যায়নি। আবার চেষ্টা করুন।');
         } else {
-          setStatusMessage('ভয়েস রিকগনিশনে সমস্যা হয়েছে। নিচে টাইপ করে ট্রাই করুন।');
+          setStatusMessage('ভয়েস সিগন্যাল পুনঃসংযোগ। নিচে টাইপ করে সেভ করতে পারেন।');
         }
       };
 
@@ -93,7 +92,6 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     }
   }, [activeBuyer, defaultRatePerKg]);
 
-  // Toggle speech recording
   const toggleListening = () => {
     if (isListening) {
       if (recognitionRef.current) {
@@ -120,7 +118,6 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     }
   };
 
-  // Handle live text input change
   const handleInputChange = (val: string) => {
     setTranscriptInput(val);
     if (val.trim().length >= 2) {
@@ -131,44 +128,16 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     }
   };
 
-  // Process text via Gemini API or Local Parser
-  const handleProcessAndCommit = async (textToProcess?: string) => {
+  // Instant Commit logic (< 2ms)
+  const handleProcessAndCommit = (textToProcess?: string) => {
     const rawText = textToProcess || transcriptInput;
     if (!rawText || rawText.trim().length < 2) {
       setStatusMessage('❌ দয়া করে আগে মুখে বলুন অথবা ভয়েস বাক্য লিখুন');
       return;
     }
 
-    setIsProcessing(true);
-    setStatusMessage('ভয়েস ডাটা প্রসেসিং করা হচ্ছে...');
-
-    let parsedResult: VoiceParseResult | null = null;
-
-    try {
-      const res = await fetch('/api/parse-voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: rawText,
-          currentBuyer: activeBuyer,
-          defaultTareKg,
-          defaultRate: defaultRatePerKg,
-        }),
-      });
-      const resData = await res.json();
-      if (resData.success && resData.data && resData.data.weightKg > 0) {
-        parsedResult = resData.data;
-      }
-    } catch (err) {
-      console.warn('Backend parse failed, using client parser:', err);
-    }
-
-    // Client side parser fallback
-    if (!parsedResult || parsedResult.weightKg <= 0) {
-      parsedResult = parseBengaliVoiceClientSide(rawText, activeBuyer, defaultRatePerKg);
-    }
-
-    setIsProcessing(false);
+    // Run client parser instantly
+    const parsedResult = parseBengaliVoiceClientSide(rawText, activeBuyer, defaultRatePerKg);
 
     if (parsedResult && parsedResult.weightKg > 0) {
       const totalGrossKg = parsedResult.weightKg;
@@ -194,15 +163,16 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
         entryData.dariNo = parsedResult.dariNo;
       }
 
+      // Add to state instantly!
       onAddDariEntry(entryData);
 
-      // Sound & Haptic
+      // Sound feedback
       if (settings.enableAudioChime) {
         audioManager.playSuccessChime();
         audioManager.vibrate(100);
       }
 
-      // Voice readback
+      // Voice readout
       if (settings.enableTtsSpeak) {
         audioManager.speakBengali(
           `${entryData.buyerName} ${entryData.grossKg} কেজি ${entryData.grossGrams} গ্রাম সংরক্ষিত হয়েছে`
@@ -216,7 +186,7 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
       setParsePreview(null);
     } else {
       if (settings.enableAudioChime) audioManager.playErrorChime();
-      setStatusMessage('❌ ওজন বোঝা যায়নি। লিখুন (যেমন: "নাইম ৩৫ কেজি ২০০ গ্রাম")');
+      setStatusMessage('❌ ওজন বোঝা যায়নি। স্পষ্ট লিখুন (যেমন: "নাইম ৩৫ কেজি ২০০ গ্রাম")');
     }
   };
 
@@ -247,7 +217,6 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={toggleListening}
-              disabled={isProcessing}
               className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
                 isListening
                   ? 'bg-red-600 text-white shadow-lg shadow-red-600/40 animate-pulse scale-105'
@@ -255,9 +224,7 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
               }`}
               title={isListening ? 'মাইক বন্ধ করুন' : 'মাইক চালু করুন'}
             >
-              {isProcessing ? (
-                <RefreshCw className="w-6 h-6 animate-spin text-amber-300" />
-              ) : isListening ? (
+              {isListening ? (
                 <MicOff className="w-6 h-6 text-white" />
               ) : (
                 <Mic className="w-6 h-6 text-white" />
@@ -278,7 +245,7 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
 
             <button
               onClick={() => handleProcessAndCommit()}
-              disabled={isProcessing || !transcriptInput.trim()}
+              disabled={!transcriptInput.trim()}
               className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all shrink-0"
             >
               <Send className="w-4 h-4" /> সেভ

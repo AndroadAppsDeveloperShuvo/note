@@ -24,10 +24,9 @@ export const auth = getAuth(app);
 export async function testFirebaseConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log('Firebase Firestore connection verified.');
   } catch (error) {
     if (error instanceof Error && error.message.includes('offline')) {
-      console.warn('Firebase is offline or checking connection.');
+      console.warn('Firebase connection check offline.');
     }
   }
 }
@@ -78,7 +77,6 @@ export function subscribeSessions(
 
       for (const sessionDoc of snapshot.docs) {
         const data = sessionDoc.data() as SalesSession;
-        // Fetch sub-collection entries for each session
         const entriesRef = collection(db, 'sessions', sessionDoc.id, 'entries');
 
         try {
@@ -86,7 +84,6 @@ export function subscribeSessions(
           const entries: DariEntry[] = entriesSnap.docs.map(
             (d) => d.data() as DariEntry
           );
-          // Sort entries by timestamp
           entries.sort((a, b) => a.timestamp - b.timestamp);
 
           sessionsList.push({
@@ -101,7 +98,6 @@ export function subscribeSessions(
         }
       }
 
-      // Sort sessions by createdAt descending
       sessionsList.sort((a, b) => b.createdAt - a.createdAt);
       if (sessionsList.length > 0) {
         onUpdate(sessionsList);
@@ -113,44 +109,35 @@ export function subscribeSessions(
   );
 }
 
-// Save or Update Session in Firestore
-export async function saveSessionToFirestore(session: SalesSession) {
-  const path = `sessions/${session.id}`;
-  try {
-    const sessionDocRef = doc(db, 'sessions', session.id);
-    const { entries, ...sessionMeta } = session;
+// Ultra-fast non-blocking single entry write to Firestore
+export function saveSingleEntryToFirestore(sessionId: string, entry: DariEntry) {
+  const entryRef = doc(db, 'sessions', sessionId, 'entries', entry.id);
+  setDoc(entryRef, entry, { merge: true }).catch((error) => {
+    handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/entries/${entry.id}`);
+  });
+}
 
-    // Save session metadata
-    await setDoc(sessionDocRef, sessionMeta, { merge: true });
-
-    // Save each entry to subcollection
-    for (const entry of entries) {
-      const entryRef = doc(db, 'sessions', session.id, 'entries', entry.id);
-      await setDoc(entryRef, entry, { merge: true });
-    }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
-  }
+// Save Session Metadata asynchronously
+export function saveSessionMetaToFirestore(session: SalesSession) {
+  const sessionDocRef = doc(db, 'sessions', session.id);
+  const { entries, ...sessionMeta } = session;
+  setDoc(sessionDocRef, sessionMeta, { merge: true }).catch((error) => {
+    handleFirestoreError(error, OperationType.WRITE, `sessions/${session.id}`);
+  });
 }
 
 // Delete Entry from Firestore
-export async function deleteEntryFromFirestore(sessionId: string, entryId: string) {
-  const path = `sessions/${sessionId}/entries/${entryId}`;
-  try {
-    const entryRef = doc(db, 'sessions', sessionId, 'entries', entryId);
-    await deleteDoc(entryRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+export function deleteEntryFromFirestore(sessionId: string, entryId: string) {
+  const entryRef = doc(db, 'sessions', sessionId, 'entries', entryId);
+  deleteDoc(entryRef).catch((error) => {
+    handleFirestoreError(error, OperationType.DELETE, `sessions/${sessionId}/entries/${entryId}`);
+  });
 }
 
 // Delete Session from Firestore
-export async function deleteSessionFromFirestore(sessionId: string) {
-  const path = `sessions/${sessionId}`;
-  try {
-    const sessionDocRef = doc(db, 'sessions', sessionId);
-    await deleteDoc(sessionDocRef);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+export function deleteSessionFromFirestore(sessionId: string) {
+  const sessionDocRef = doc(db, 'sessions', sessionId);
+  deleteDoc(sessionDocRef).catch((error) => {
+    handleFirestoreError(error, OperationType.DELETE, `sessions/${sessionId}`);
+  });
 }

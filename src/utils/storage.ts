@@ -10,6 +10,7 @@ export interface AppSettings {
   enableTtsSpeak: boolean;
   enableAutoHandsFree: boolean;
   activeBuyerName: string;
+  customBuyers: string[];
   theme: 'dark' | 'light';
 }
 
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   enableTtsSpeak: true,
   enableAutoHandsFree: false,
   activeBuyerName: 'নাইম',
+  customBuyers: ['নাইম', 'রফিক', 'সুমন', 'আলম', 'লিটন'],
   theme: 'dark',
 };
 
