@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, RefreshCw, Volume2, Sparkles, CheckCircle2, RotateCcw, Play, Square } from 'lucide-react';
+import { Mic, MicOff, RefreshCw, Sparkles, CheckCircle2, RotateCcw, Volume2, Send } from 'lucide-react';
 import { parseBengaliVoiceClientSide } from '../utils/bengaliParser';
 import { VoiceParseResult, DariEntry } from '../types/poultry';
 import { audioManager } from '../utils/audioHelper';
@@ -27,107 +27,73 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
   onOpenManualModal,
 }) => {
   const [isListening, setIsListening] = useState(false);
-  const [isHandsFree, setIsHandsFree] = useState(settings.enableAutoHandsFree);
-  const [transcript, setTranscript] = useState('');
+  const [transcriptInput, setTranscriptInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [parsePreview, setParsePreview] = useState<VoiceParseResult | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string>('ফোন স্কেলের পাশে রাখুন ও মুখে বলুন');
+  const [statusMessage, setStatusMessage] = useState<string>('মাইক অন করে মুখে বলুন অথবা নিচে লিখুন');
   const [speechError, setSpeechError] = useState<string | null>(null);
 
   const recognitionRef = useRef<any>(null);
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const currentTranscriptRef = useRef('');
 
-  // Initialize Web Speech Recognition
+  // Initialize Speech Recognition
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setSpeechError('আপনার ব্রাউজারে স্পিচ রিকগনিশন সমর্থন করে না। আপনি ম্যানুয়াল এন্ট্রি ব্যবহার করতে পারেন।');
+      setSpeechError('ব্রাউজারে সরাসরি ভয়েস স্পিচ সমর্থিত নয়। আপনি নিচে লিখে বা বাটনে চাপ দিয়ে এন্ট্রি করতে পারবেন।');
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'bn-BD'; // Primary Bengali Bangladesh
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false; // Single shot is much more reliable across mobile & desktop
+      recognition.interimResults = true;
+      recognition.lang = 'bn-BD';
 
-    recognition.onstart = () => {
-      setIsListening(true);
-      setStatusMessage('মাইক চালু আছে... মুখে বলুন (যেমন: নাইম ৩৫ কেজি ২০০ গ্রাম)');
-      setSpeechError(null);
-    };
+      recognition.onstart = () => {
+        setIsListening(true);
+        setStatusMessage('🎙️ শুনছি... মুখে স্পষ্ট করে বলুন (যেমন: নাইম ৩৫ কেজি ২০০ গ্রাম)');
+        setSpeechError(null);
+      };
 
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      let final = '';
+      recognition.onresult = (event: any) => {
+        let currentText = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          currentText += event.results[i][0].transcript;
+        }
 
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
+        if (currentText) {
+          setTranscriptInput(currentText);
+          const preview = parseBengaliVoiceClientSide(currentText, activeBuyer, defaultRatePerKg);
+          setParsePreview(preview);
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+        if (event.error === 'not-allowed') {
+          setSpeechError('মাইক্রোফোন ব্যবহারের অনুমতি প্রয়োজন। ব্রাউজার সেটিংসে মাইক Allow করুন।');
+        } else if (event.error === 'no-speech') {
+          setStatusMessage('কোনো কথা শোনা যায়নি। আবার চেষ্টা করুন।');
         } else {
-          interim += event.results[i][0].transcript;
+          setStatusMessage('ভয়েস রিকগনিশনে সমস্যা হয়েছে। নিচে টাইপ করে ট্রাই করুন।');
         }
-      }
+      };
 
-      const currentText = final || interim;
-      setTranscript(currentText);
-      currentTranscriptRef.current = currentText;
-
-      // Real-time preview parse
-      if (currentText.trim().length > 3) {
-        const preview = parseBengaliVoiceClientSide(currentText, activeBuyer, defaultRatePerKg);
-        setParsePreview(preview);
-      }
-
-      // If user stops talking for 1.8s in Hands-Free mode, commit automatically!
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      if (currentText.trim().length > 4) {
-        silenceTimerRef.current = setTimeout(() => {
-          handleProcessAndCommit(currentText);
-        }, 1800);
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.warn('Speech recognition error:', event.error);
-      if (event.error === 'no-speech') {
-        setStatusMessage('কোনো কথা শোনা যায়নি। আবার মুখে বলুন...');
-      } else if (event.error === 'not-allowed') {
-        setSpeechError('মাইক্রোফোন পারমিশন প্রয়োজন। ব্রাউজার সেটিংসে মাইক অ্যালাউ করুন।');
+      recognition.onend = () => {
         setIsListening(false);
-      } else {
-        setStatusMessage('ভয়েস সিগন্যাল পুনঃসংযোগ করা হচ্ছে...');
-      }
-    };
+      };
 
-    recognition.onend = () => {
-      // If hands-free mode is on and user didn't manually stop it, restart automatically
-      if (isHandsFree && recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {
-          setIsListening(false);
-        }
-      } else {
-        setIsListening(false);
-      }
-    };
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.warn('Speech recognition setup failed:', e);
+    }
+  }, [activeBuyer, defaultRatePerKg]);
 
-    recognitionRef.current = recognition;
-
-    return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
-      }
-    };
-  }, [isHandsFree, activeBuyer, defaultRatePerKg]);
-
+  // Toggle speech recording
   const toggleListening = () => {
     if (isListening) {
       if (recognitionRef.current) {
@@ -138,30 +104,47 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
       setIsListening(false);
       setStatusMessage('মাইক বন্ধ করা হয়েছে।');
     } else {
-      setTranscript('');
+      setTranscriptInput('');
       setParsePreview(null);
+      setSpeechError(null);
       if (recognitionRef.current) {
         try {
           recognitionRef.current.start();
         } catch (e) {
-          setSpeechError('মাইক চালু করতে ব্যর্থ হয়েছে।');
+          setIsListening(false);
+          setSpeechError('মাইক চালু করতে ব্রাউজার অনুমতি দিন বা নিচে লিখুন।');
         }
+      } else {
+        setSpeechError('আপনার ব্রাউজার মাইক সাপোর্ট করে না। নিচে লিখে এন্ট্রি করুন।');
       }
     }
   };
 
-  // Process spoken transcript via Gemini API or local Bengali parser
+  // Handle live text input change
+  const handleInputChange = (val: string) => {
+    setTranscriptInput(val);
+    if (val.trim().length >= 2) {
+      const preview = parseBengaliVoiceClientSide(val, activeBuyer, defaultRatePerKg);
+      setParsePreview(preview);
+    } else {
+      setParsePreview(null);
+    }
+  };
+
+  // Process text via Gemini API or Local Parser
   const handleProcessAndCommit = async (textToProcess?: string) => {
-    const rawText = textToProcess || transcript || currentTranscriptRef.current;
-    if (!rawText || rawText.trim().length < 3) return;
+    const rawText = textToProcess || transcriptInput;
+    if (!rawText || rawText.trim().length < 2) {
+      setStatusMessage('❌ দয়া করে আগে মুখে বলুন অথবা ভয়েস বাক্য লিখুন');
+      return;
+    }
 
     setIsProcessing(true);
-    setStatusMessage('ভয়েস ডাটা বিশ্লেষণ করা হচ্ছে...');
+    setStatusMessage('ভয়েস ডাটা প্রসেসিং করা হচ্ছে...');
 
     let parsedResult: VoiceParseResult | null = null;
 
     try {
-      // Try Gemini Server Endpoint first for 100% voice precision
       const res = await fetch('/api/parse-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,10 +160,10 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
         parsedResult = resData.data;
       }
     } catch (err) {
-      console.warn('Backend Gemini parse failed, falling back to client parser:', err);
+      console.warn('Backend parse failed, using client parser:', err);
     }
 
-    // Fallback to fast client-side Bengali parser if server call unavailable
+    // Client side parser fallback
     if (!parsedResult || parsedResult.weightKg <= 0) {
       parsedResult = parseBengaliVoiceClientSide(rawText, activeBuyer, defaultRatePerKg);
     }
@@ -188,7 +171,6 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     setIsProcessing(false);
 
     if (parsedResult && parsedResult.weightKg > 0) {
-      // Calculate net weight
       const totalGrossKg = parsedResult.weightKg;
       const tareKg = defaultTareKg;
       const netKg = Number(Math.max(0, totalGrossKg - tareKg).toFixed(3));
@@ -214,27 +196,27 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
 
       onAddDariEntry(entryData);
 
-      // Sound & Haptic Feedback
+      // Sound & Haptic
       if (settings.enableAudioChime) {
         audioManager.playSuccessChime();
-        audioManager.vibrate(120);
+        audioManager.vibrate(100);
       }
 
-      // Spoken Feedback if enabled
+      // Voice readback
       if (settings.enableTtsSpeak) {
-        const spokenMsg = `${entryData.buyerName} ${entryData.grossKg} কেজি ${entryData.grossGrams} গ্রাম সংরক্ষিত হয়েছে।`;
-        audioManager.speakBengali(spokenMsg);
+        audioManager.speakBengali(
+          `${entryData.buyerName} ${entryData.grossKg} কেজি ${entryData.grossGrams} গ্রাম সংরক্ষিত হয়েছে`
+        );
       }
 
-      setStatusMessage(`✅ ${entryData.buyerName}: ${entryData.totalGrossKg} কেজি (নিট ${entryData.netKg} কেজি) যুক্ত হয়েছে!`);
-      setTranscript('');
+      setStatusMessage(
+        `✅ ${entryData.buyerName}: ${entryData.totalGrossKg} কেজি (নিট ${entryData.netKg} কেজি) = ৳${totalPrice} সংরক্ষিত!`
+      );
+      setTranscriptInput('');
       setParsePreview(null);
-      currentTranscriptRef.current = '';
     } else {
-      if (settings.enableAudioChime) {
-        audioManager.playErrorChime();
-      }
-      setStatusMessage('❌ ওজন স্পষ্ট বোঝা যায়নি। আবার স্পষ্ট করে বলুন (যেমন: "নাইম ৩৫ কেজি ২০০ গ্রাম")');
+      if (settings.enableAudioChime) audioManager.playErrorChime();
+      setStatusMessage('❌ ওজন বোঝা যায়নি। লিখুন (যেমন: "নাইম ৩৫ কেজি ২০০ গ্রাম")');
     }
   };
 
@@ -242,164 +224,116 @@ export const VoiceMicBar: React.FC<VoiceMicBarProps> = ({
     <div className="bg-slate-900 px-4 py-4 border-b border-slate-800">
       <div className="max-w-4xl mx-auto space-y-3">
         {/* Voice Control Main Card */}
-        <div className="relative bg-gradient-to-b from-slate-800/90 to-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-xl overflow-hidden">
-          {/* Subtle background glow when mic is active */}
-          {isListening && (
-            <div className="absolute inset-0 bg-emerald-500/5 backdrop-blur-3xl animate-pulse pointer-events-none" />
-          )}
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
-            {/* Left: Big iOS Microphone Button */}
-            <div className="flex items-center gap-4 w-full sm:w-auto">
-              <button
-                onClick={toggleListening}
-                disabled={isProcessing}
-                className={`relative w-20 h-20 rounded-2xl flex flex-col items-center justify-center transition-all duration-300 shrink-0 ${
-                  isListening
-                    ? 'bg-gradient-to-tr from-emerald-600 to-teal-500 text-white shadow-lg shadow-emerald-500/30 animate-mic-pulse scale-105'
-                    : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-2 border-slate-700'
+        <div className="relative bg-gradient-to-b from-slate-800/90 to-slate-900 border border-slate-700/80 rounded-2xl p-4 shadow-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-3 h-3 rounded-full ${
+                  isListening ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'
                 }`}
-              >
-                {isProcessing ? (
-                  <RefreshCw className="w-8 h-8 animate-spin text-amber-400" />
-                ) : isListening ? (
-                  <>
-                    <Mic className="w-8 h-8 animate-bounce text-white" />
-                    <span className="text-[10px] font-bold mt-1">রেকর্ডিং...</span>
-                  </>
-                ) : (
-                  <>
-                    <Mic className="w-8 h-8 text-emerald-400" />
-                    <span className="text-[10px] font-medium text-slate-400 mt-1">মাইক চাপুন</span>
-                  </>
-                )}
-              </button>
-
-              {/* Live Audio Waveform & Status */}
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-block w-2.5 h-2.5 rounded-full ${
-                      isListening ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'
-                    }`}
-                  />
-                  <span className="text-xs font-semibold text-slate-200">
-                    {isListening ? 'ভয়েস রিসিভার সক্রিয়' : 'ভয়েস কমান্ড বন্ধ'}
-                  </span>
-
-                  {/* Hands-Free Mode Tag */}
-                  <button
-                    onClick={() => setIsHandsFree(!isHandsFree)}
-                    className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full border transition-colors ${
-                      isHandsFree
-                        ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
-                        : 'bg-slate-800 text-slate-400 border-slate-700'
-                    }`}
-                  >
-                    হ্যান্ডস-ফ্রি {isHandsFree ? 'চালু' : 'বন্ধ'}
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-400 leading-snug">{statusMessage}</p>
-
-                {/* Animated sound wave bars when listening */}
-                {isListening && (
-                  <div className="flex items-center gap-1 pt-1 h-6">
-                    <div className="w-1 bg-emerald-400 rounded-full animate-wave-1" />
-                    <div className="w-1 bg-emerald-400 rounded-full animate-wave-2" />
-                    <div className="w-1 bg-emerald-400 rounded-full animate-wave-3" />
-                    <div className="w-1 bg-emerald-400 rounded-full animate-wave-4" />
-                    <div className="w-1 bg-emerald-400 rounded-full animate-wave-5" />
-                    <span className="text-[11px] font-mono text-emerald-400 ml-1">শুনছি...</span>
-                  </div>
-                )}
-              </div>
+              />
+              <span className="text-sm font-bold text-white">ভয়েস স্পিচ সহকারী</span>
             </div>
 
-            {/* Right: Manual Input Modal Trigger */}
-            <div className="w-full sm:w-auto flex items-center justify-end gap-2 border-t sm:border-t-0 border-slate-800 pt-3 sm:pt-0">
-              <button
-                onClick={onOpenManualModal}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-2 transition-colors"
-              >
-                <span>+ ম্যানুয়াল টাইপ</span>
-              </button>
-            </div>
+            <button
+              onClick={onOpenManualModal}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-bold transition-colors"
+            >
+              + ম্যানুয়াল ডায়াল টাইপ
+            </button>
           </div>
 
-          {/* Transcript Preview Box */}
-          {transcript && (
-            <div className="mt-3 bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                  <Sparkles className="w-3.5 h-3.5" /> মুখে বলা বাক্য:
-                </span>
-                <button
-                  onClick={() => handleProcessAndCommit()}
-                  disabled={isProcessing}
-                  className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 transition-colors"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> সংরক্ষন করুন
-                </button>
-              </div>
-
-              <p className="text-sm font-semibold text-emerald-200 font-mono-num bg-slate-900/60 p-2 rounded-lg border border-slate-800">
-                "{transcript}"
-              </p>
-
-              {/* Instant parsed preview */}
-              {parsePreview && parsePreview.weightKg > 0 && (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 pt-1">
-                  <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200">
-                    খদ্দের: <strong>{parsePreview.buyerName}</strong>
-                  </span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono-num font-bold">
-                    কাঁচা ওজন: {parsePreview.weightKg} কেজি ({parsePreview.grossKg} কেজি {parsePreview.grossGrams} গ্রাম)
-                  </span>
-                  {parsePreview.birdCount > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200">
-                      মুরগি: {parsePreview.birdCount} পিস
-                    </span>
-                  )}
-                  {parsePreview.ratePerKg > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300">
-                      দর: ৳{parsePreview.ratePerKg}
-                    </span>
-                  )}
-                </div>
+          {/* Voice Input Box & Mic Button */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleListening}
+              disabled={isProcessing}
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                isListening
+                  ? 'bg-red-600 text-white shadow-lg shadow-red-600/40 animate-pulse scale-105'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/30'
+              }`}
+              title={isListening ? 'মাইক বন্ধ করুন' : 'মাইক চালু করুন'}
+            >
+              {isProcessing ? (
+                <RefreshCw className="w-6 h-6 animate-spin text-amber-300" />
+              ) : isListening ? (
+                <MicOff className="w-6 h-6 text-white" />
+              ) : (
+                <Mic className="w-6 h-6 text-white" />
               )}
+            </button>
+
+            {/* Input field for spoken transcript or direct typing */}
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                placeholder={isListening ? 'কথা বলুন...' : 'মুখে বলুন অথবা লিখুন (যেমন: নাইম ৩৫ কেজি ২০০ গ্রাম)'}
+                value={transcriptInput}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleProcessAndCommit()}
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-3 text-sm text-emerald-300 font-bold font-mono-num focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <button
+              onClick={() => handleProcessAndCommit()}
+              disabled={isProcessing || !transcriptInput.trim()}
+              className="px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs flex items-center gap-1.5 shadow-md disabled:opacity-40 transition-all shrink-0"
+            >
+              <Send className="w-4 h-4" /> সেভ
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400 leading-snug">{statusMessage}</p>
+
+          {/* Parsed Preview Badge */}
+          {parsePreview && parsePreview.weightKg > 0 && (
+            <div className="bg-emerald-950/70 border border-emerald-500/40 rounded-xl p-2.5 text-xs text-emerald-200 flex flex-wrap items-center justify-between gap-2 animate-fadeIn">
+              <div>
+                খদ্দের: <strong>{parsePreview.buyerName}</strong> · কাঁচা ওজন:{' '}
+                <strong className="font-mono-num font-bold text-sm text-emerald-400">
+                  {parsePreview.weightKg} কেজি
+                </strong>{' '}
+                ({parsePreview.grossKg} kg {parsePreview.grossGrams} g)
+              </div>
+              <div className="font-mono-num font-bold text-amber-300">
+                নিট: {(parsePreview.weightKg - defaultTareKg).toFixed(2)} kg = ৳
+                {Math.round((parsePreview.weightKg - defaultTareKg) * defaultRatePerKg)}
+              </div>
             </div>
           )}
 
-          {/* Speech Error Banner */}
           {speechError && (
-            <div className="mt-3 bg-red-950/40 border border-red-800/50 rounded-xl p-3 text-xs text-red-300">
+            <div className="bg-red-950/40 border border-red-800/50 rounded-xl p-2.5 text-xs text-red-300">
               {speechError}
             </div>
           )}
         </div>
 
-        {/* Voice Example Prompt Hints */}
-        <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 py-2 text-[11px] text-slate-400 flex flex-wrap items-center gap-2">
-          <span className="font-semibold text-slate-300">ভয়েস উদাহরণ:</span>
-          <button
-            onClick={() => handleProcessAndCommit('নাইম ৩৫ কেজি ২০০ গ্রাম')}
-            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
-          >
-            "নাইম ৩৫ কেজি ২০০ গ্রাম"
-          </button>
-          <button
-            onClick={() => handleProcessAndCommit('রফিক ২ নম্বর ৪২ কেজি ৫০০ গ্রাম ১৫ পিস')}
-            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
-          >
-            "রফিক ২ নম্বর ৪২ কেজি ৫০০ গ্রাম"
-          </button>
-          <button
-            onClick={() => handleProcessAndCommit('৩৮ কেজি ১০০ গ্রাম')}
-            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
-          >
-            "৩৮ কেজি ১০০ গ্রাম"
-          </button>
+        {/* Instant 1-Tap Spoken Voice Presets */}
+        <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl px-3 py-2 text-[11px] text-slate-400 space-y-1.5">
+          <span className="font-semibold text-slate-300 block">১-ট্যাপ টেস্ট ভয়েস বোতাম:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              `${activeBuyer} ৩৫ কেজি ২০০ গ্রাম`,
+              `${activeBuyer} ৪২ কেজি ৫০০ গ্রাম ১৫ পিস`,
+              `রফিক ৩৮ কেজি ১০০ গ্রাম`,
+              `সুমন ৫০ কেজি`,
+              `৩৭.৫ কেজি`,
+            ].map((phrase) => (
+              <button
+                key={phrase}
+                onClick={() => {
+                  setTranscriptInput(phrase);
+                  handleProcessAndCommit(phrase);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 transition-colors"
+              >
+                "{phrase}"
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Last Added Entry Undo Banner */}
